@@ -59,7 +59,10 @@ trap cleanup SIGINT SIGTERM
 kill_port() {
     local port=$1
     local pids
-    pids=$(lsof -ti:"$port" 2>/dev/null || true)
+    # -sTCP:LISTEN so we only match the process *listening* on the port, not
+    # clients with a connection to it — otherwise a browser tab open on the dev
+    # API (localhost:8000) gets killed along with a stale server.
+    pids=$(lsof -ti:"$port" -sTCP:LISTEN 2>/dev/null || true)
     if [ -n "$pids" ]; then
         log "${YELLOW}Killing stale process(es) on port $port${RESET}"
         echo "$pids" | xargs kill -9 2>/dev/null || true
