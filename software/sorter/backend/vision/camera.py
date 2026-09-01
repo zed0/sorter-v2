@@ -1,4 +1,5 @@
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -9,6 +10,28 @@ import cv2
 import numpy as np
 
 log = logging.getLogger(__name__)
+
+
+def _configure_opencv_log_level() -> None:
+    """Clamp OpenCV's own logger so failed camera opens don't flood stderr.
+
+    OpenCV's V4L2 backend writes a warning straight to stderr every time it
+    fails to open a device, bypassing Python's ``logging``. The capture loop
+    retries a missing device indefinitely (see ``_capture_failure_backoff_s``),
+    so an unplugged camera — or a dev box with none at all — spams
+    ``can't open camera by index`` every few seconds. Default OpenCV to ERROR;
+    an operator debugging capture can raise it via ``SORTER_OPENCV_LOG_LEVEL``
+    (ERROR, WARNING, INFO, DEBUG, VERBOSE, SILENT).
+    """
+    name = os.environ.get("SORTER_OPENCV_LOG_LEVEL", "ERROR").strip().upper()
+    try:
+        cv_logging = cv2.utils.logging
+        cv_logging.setLogLevel(getattr(cv_logging, f"LOG_LEVEL_{name}"))
+    except Exception:
+        pass
+
+
+_configure_opencv_log_level()
 
 # One-shot flags so we log only the *first* time a non-identity picture/color
 # path runs in a given process. Lets ops grep journalctl for these strings —
