@@ -59,6 +59,15 @@ if [[ "$SKIP_APT" == "false" ]]; then
         lsof \
         v4l-utils \
         udev
+
+    # aarch64 (Orange Pi) also builds pygobject/pycairo from source — see
+    # software/sorter/backend/pyproject.toml. These are the -dev packages
+    # sorteros' chroot_apt.sh installs on the real image; without them
+    # `uv sync` fails with `Dependency "cairo" not found (tried pkg-config)`.
+    if [[ "$(dpkg --print-architecture)" == "arm64" ]]; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            libcairo2-dev libgirepository1.0-dev gir1.2-glib-2.0
+    fi
     ok "apt packages installed"
 else
     warn "Skipping apt step (--skip-apt)"
