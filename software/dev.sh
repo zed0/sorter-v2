@@ -17,6 +17,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 ENV_FILE="$ROOT/.env"
 
+# uv installs to ~/.local/bin, which a non-login shell (or one opened before
+# install.sh ran) may not have on PATH yet — mirror install.sh so `./dev.sh`
+# works without sourcing ~/.bashrc first.
+if ! command -v uv &>/dev/null && [ -x "$HOME/.local/bin/uv" ]; then
+    export PATH="$HOME/.local/bin:$PATH"
+fi
+
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
