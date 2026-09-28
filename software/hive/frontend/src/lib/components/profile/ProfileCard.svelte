@@ -2,14 +2,18 @@
 	import type { SortingProfileSummary } from '$lib/api';
 	import EyeOff from 'lucide-svelte/icons/eye-off';
 	import Trash2 from 'lucide-svelte/icons/trash-2';
+	import BookmarkMinus from 'lucide-svelte/icons/bookmark-minus';
 
 	interface Props {
 		profile: SortingProfileSummary;
 		/** Shown as a delete button on owned profiles when provided. */
 		ondelete?: (profile: SortingProfileSummary) => void;
+		/** Shown as a remove-from-library button when provided. */
+		onremove?: (profile: SortingProfileSummary) => void;
+		removing?: boolean;
 	}
 
-	let { profile, ondelete }: Props = $props();
+	let { profile, ondelete, onremove, removing = false }: Props = $props();
 
 	const rules = $derived(profile.latest_version?.rules_summary ?? []);
 	const activeRules = $derived(rules.filter((r) => !r.disabled));
@@ -100,6 +104,17 @@
 							<span class="border border-border bg-bg px-1.5 py-0.5 text-[10px] text-text-muted">{tag}</span>
 						{/each}
 					</div>
+				{/if}
+				{#if onremove}
+					<button
+						onclick={(e) => { e.preventDefault(); e.stopPropagation(); onremove(profile); }}
+						disabled={removing}
+						class="p-1 text-text-muted opacity-0 transition-opacity hover:text-primary group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+						title="Remove from library"
+						aria-label="Remove {profile.name} from library"
+					>
+						<BookmarkMinus size={14} />
+					</button>
 				{/if}
 				{#if profile.is_owner && ondelete}
 					<button

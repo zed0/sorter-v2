@@ -71,6 +71,12 @@
 	</div>
 	<div class="flex flex-wrap gap-2">
 		<a
+			href="/profiles/library"
+			class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg"
+		>
+			My Library
+		</a>
+		<a
 			href="/profiles/discover"
 			class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg"
 		>
