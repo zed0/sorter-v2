@@ -1141,17 +1141,7 @@ def _query_profiles_for_scope(
                 SortingProfileLibraryEntry,
                 SortingProfileLibraryEntry.profile_id == SortingProfile.id,
             )
-            .filter(
-                SortingProfileLibraryEntry.user_id == current_user.id,
-                # Someone else's profile drops out of your library while its
-                # owner has it private. The entry is kept, so it comes back if
-                # the profile is shared again; your own forks are yours and
-                # always stay.
-                or_(
-                    SortingProfile.owner_id == current_user.id,
-                    SortingProfile.visibility.in_(("public", "unlisted")),
-                ),
-            )
+            .filter(SortingProfileLibraryEntry.user_id == current_user.id)
         )
     else:
         q = q.filter(

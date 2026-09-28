@@ -436,50 +436,6 @@ class TestPublicProfiles:
 
         assert client.get("/api/profiles?scope=discover&sort=bogus").status_code == 422
 
-    def test_library_hides_profiles_made_private_but_keeps_forks(
-        self, client: TestClient, auth_headers: dict[str, str], test_user: dict
-    ) -> None:
-        shared = _create_profile(client, auth_headers, visibility="public", name="Shared")
-        _create_version(client, auth_headers, shared["id"], name="Shared", publish=True)
-
-        client.post("/api/auth/logout", headers=_auth_headers(client))
-        _register_user(client, "fan@test.com", "Password123!", "Fan")
-        _login_user(client, "fan@test.com", "Password123!")
-        save = client.post(f"/api/profiles/{shared['id']}/library", headers=_auth_headers(client))
-        assert save.status_code == 200, save.text
-        fork = client.post(
-            f"/api/profiles/{shared['id']}/fork",
-            json={"name": "My Fork", "add_to_library": True},
-            headers=_auth_headers(client),
-        )
-        assert fork.status_code == 200, fork.text
-        fork_id = fork.json()["id"]
-
-        def library_ids() -> set[str]:
-            response = client.get("/api/profiles?scope=library")
-            assert response.status_code == 200, response.text
-            return {p["id"] for p in response.json()}
-
-        assert library_ids() == {shared["id"], fork_id}
-
-        def set_owner_visibility(visibility: str) -> None:
-            client.post("/api/auth/logout", headers=_auth_headers(client))
-            _login_user(client, test_user["email"], test_user["password"])
-            response = client.patch(
-                f"/api/profiles/{shared['id']}",
-                json={"visibility": visibility},
-                headers=_auth_headers(client),
-            )
-            assert response.status_code == 200, response.text
-            client.post("/api/auth/logout", headers=_auth_headers(client))
-            _login_user(client, "fan@test.com", "Password123!")
-
-        set_owner_visibility("private")
-        assert library_ids() == {fork_id}
-
-        set_owner_visibility("unlisted")
-        assert library_ids() == {shared["id"], fork_id}
-
 
 class TestCommunityAndMachineFlows:
     def test_library_fork_assignment_and_machine_token_endpoints(
