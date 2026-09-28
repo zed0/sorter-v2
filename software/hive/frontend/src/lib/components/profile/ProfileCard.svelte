@@ -19,7 +19,7 @@
 	const activeRules = $derived(rules.filter((r) => !r.disabled));
 </script>
 
-<a href={profile.is_owner ? `/profiles/${profile.id}/edit` : `/profiles/${profile.id}`}
+<a href={`/profiles/${profile.id}`}
 	class="group flex flex-col border border-border bg-surface transition-colors hover:border-text-muted">
 	<!-- Header -->
 	<div class="px-4 pt-4 pb-3">
