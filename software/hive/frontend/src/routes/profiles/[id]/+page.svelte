@@ -348,7 +348,9 @@
 				{/if}
 				<div class="space-y-3">
 					{#each [...profile.versions].reverse() as v}
-						<div class="border border-border p-4">
+						<div class="relative border border-border p-4 transition-colors hover:border-text-muted">
+							<!-- Stretched link: the whole row opens the read-only version view; the Publish button sits above it. -->
+							<a href={`/profiles/${profile.id}/versions/${v.id}`} class="absolute inset-0" aria-label="View v{v.version_number} rules"></a>
 							<div class="flex items-start justify-between gap-3">
 								<div>
 									<div class="flex flex-wrap items-center gap-2">
@@ -364,7 +366,7 @@
 									<div>{v.compiled_part_count} parts</div>
 									<div>{coveragePct(v.coverage_ratio)} coverage</div>
 									{#if profile.is_owner && !v.is_published}
-										<button onclick={() => void publishVersion(v.id)} disabled={publishingVersionId !== null} class="mt-2 border border-border px-3 py-1 text-xs font-medium text-text hover:bg-bg disabled:opacity-50">
+										<button onclick={() => void publishVersion(v.id)} disabled={publishingVersionId !== null} class="relative z-10 mt-2 border border-border bg-surface px-3 py-1 text-xs font-medium text-text hover:bg-bg disabled:opacity-50">
 											{publishingVersionId === v.id ? 'Publishing...' : 'Publish'}
 										</button>
 									{/if}
