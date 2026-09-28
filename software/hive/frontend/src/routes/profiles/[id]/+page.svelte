@@ -27,6 +27,10 @@
 	const cv = $derived(profile?.current_version ?? null);
 	const catCount = $derived(cv?.categories ? Object.keys(cv.categories).length : 0);
 	const machineProgress = $derived(setProgress?.machines ?? []);
+	// library_count includes the owner if they saved their own profile.
+	const otherLibraryCount = $derived(
+		profile ? Math.max(profile.library_count - (profile.saved_in_library ? 1 : 0), 0) : 0
+	);
 
 	const stats = $derived.by(() => {
 		if (!profile || !cv) return [];
@@ -390,6 +394,13 @@
 						<select id="s-vis" bind:value={settingsVisibility} class="w-full border border-border px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary">
 							<option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
 						</select>
+						{#if settingsVisibility === 'private' && profile.visibility !== 'private'}
+							<div class="mt-2 border border-warning/30 bg-warning-bg p-3 text-sm text-warning-strong">
+								Making this profile private hides it from Public Profiles and stops anyone new from saving it.
+								Anyone who already has it in their library{#if otherLibraryCount > 0} ({otherLibraryCount} {otherLibraryCount === 1 ? 'person' : 'people'}){/if}
+								will still be able to use the versions you've already published. Versions you publish from now on will reach them too; drafts stay hidden.
+							</div>
+						{/if}
 					</div>
 					<div>
 						<label for="s-tags" class="mb-1 block text-sm font-medium text-text">Tags</label>
