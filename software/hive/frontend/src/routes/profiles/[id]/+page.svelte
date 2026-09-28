@@ -218,17 +218,13 @@
 		<div class="flex flex-wrap gap-2">
 			{#if profile.is_owner}
 				<a href={`/profiles/${profile.id}/edit`} class="inline-block bg-primary px-4 py-2 text-sm font-medium text-white hover:bg-primary-hover">Edit Profile</a>
-			{:else}
-				<button onclick={() => void toggleLibrary()} disabled={libraryBusy} class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg disabled:opacity-50">
-					{libraryBusy ? 'Updating...' : profile.saved_in_library ? 'In Library \u2713' : 'Save to Library'}
-				</button>
+			{/if}
+			<button onclick={() => void toggleLibrary()} disabled={libraryBusy} class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg disabled:opacity-50">
+				{libraryBusy ? 'Updating...' : profile.saved_in_library ? 'In Library \u2713' : 'Save to Library'}
+			</button>
+			{#if !profile.is_owner}
 				<button onclick={() => void forkProfile()} disabled={forking} class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg disabled:opacity-50">
 					{forking ? 'Forking...' : 'Fork this Profile'}
-				</button>
-			{/if}
-			{#if profile.is_owner && profile.saved_in_library}
-				<button onclick={() => void toggleLibrary()} disabled={libraryBusy} class="border border-border px-4 py-2 text-sm font-medium text-text hover:bg-bg disabled:opacity-50">
-					{libraryBusy ? 'Updating...' : 'In Library \u2713'}
 				</button>
 			{/if}
 		</div>

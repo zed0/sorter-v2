@@ -436,6 +436,18 @@ class TestPublicProfiles:
 
         assert client.get("/api/profiles?scope=discover&sort=bogus").status_code == 422
 
+    def test_owner_can_save_own_profile_to_library(
+        self, client: TestClient, auth_headers: dict[str, str], test_user: dict
+    ) -> None:
+        mine = _create_profile(client, auth_headers, visibility="private", name="Mine")
+        save = client.post(f"/api/profiles/{mine['id']}/library", headers=auth_headers)
+        assert save.status_code == 200, save.text
+
+        library = client.get("/api/profiles?scope=library").json()
+        assert [p["id"] for p in library] == [mine["id"]]
+        assert library[0]["saved_in_library"] is True
+        assert library[0]["is_owner"] is True
+
     def test_private_profile_stays_usable_for_existing_library_holders(
         self, client: TestClient, auth_headers: dict[str, str], test_user: dict
     ) -> None:
