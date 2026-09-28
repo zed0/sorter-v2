@@ -18,6 +18,7 @@
 	let forking = $state(false);
 	let showDeleteModal = $state(false);
 	let deletingProfile = $state(false);
+	let publishingVersionId = $state<string | null>(null);
 	let setProgress = $state<SortingProfileSetProgressResponse | null>(null);
 	let setProgressLoading = $state(false);
 	let setProgressError = $state<string | null>(null);
@@ -127,6 +128,17 @@
 			goto(`/profiles/${fork.id}/edit`);
 		} catch (e: any) { error = e.error || 'Failed to fork profile'; }
 		finally { forking = false; }
+	}
+
+	async function publishVersion(versionId: string) {
+		if (!profile) return;
+		publishingVersionId = versionId; error = null; success = null;
+		try {
+			const v = await api.publishSortingProfileVersion(profile.id, versionId);
+			await loadProfile();
+			success = `Published v${v.version_number}.`;
+		} catch (e: any) { error = e.error || 'Failed to publish version'; }
+		finally { publishingVersionId = null; }
 	}
 
 	async function deleteProfile() {
@@ -325,6 +337,11 @@
 		{#if profile.versions.length > 0}
 			<div class="border border-border bg-surface p-6">
 				<h2 class="mb-4 text-lg font-semibold text-text">Version History</h2>
+				{#if profile.is_owner && profile.visibility !== 'private' && profile.latest_published_version_number == null}
+					<div class="mb-4 border border-warning/30 bg-warning-bg p-3 text-sm text-warning-strong">
+						This profile is {profile.visibility}, but no version is published yet, so other users can't see or use it. Publish a version below.
+					</div>
+				{/if}
 				<div class="space-y-3">
 					{#each [...profile.versions].reverse() as v}
 						<div class="border border-border p-4">
@@ -332,7 +349,8 @@
 								<div>
 									<div class="flex flex-wrap items-center gap-2">
 										<span class="text-sm font-semibold text-text">v{v.version_number}</span>
-										{#if v.is_published}<span class="border border-success/20 bg-success/[0.08] px-2 py-0.5 text-xs font-medium text-success">Published</span>{/if}
+										{#if v.is_published}<span class="border border-success/20 bg-success/[0.08] px-2 py-0.5 text-xs font-medium text-success">Published</span>
+										{:else if profile.is_owner}<span class="border border-border bg-bg px-2 py-0.5 text-xs font-medium text-text-muted">Draft</span>{/if}
 										{#if v.label}<span class="border border-border bg-bg px-2 py-0.5 text-xs font-medium text-text-muted">{v.label}</span>{/if}
 									</div>
 									{#if v.change_note}<p class="mt-1 text-sm text-text-muted">{v.change_note}</p>{/if}
@@ -341,6 +359,11 @@
 								<div class="text-right text-xs text-text-muted">
 									<div>{v.compiled_part_count} parts</div>
 									<div>{coveragePct(v.coverage_ratio)} coverage</div>
+									{#if profile.is_owner && !v.is_published}
+										<button onclick={() => void publishVersion(v.id)} disabled={publishingVersionId !== null} class="mt-2 border border-border px-3 py-1 text-xs font-medium text-text hover:bg-bg disabled:opacity-50">
+											{publishingVersionId === v.id ? 'Publishing...' : 'Publish'}
+										</button>
+									{/if}
 								</div>
 							</div>
 						</div>

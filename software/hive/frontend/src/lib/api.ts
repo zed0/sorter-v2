@@ -2119,6 +2119,9 @@ export const api = {
 	}) {
 		return request<SortingProfileVersion>('POST', `/api/profiles/${id}/versions`, data);
 	},
+	publishSortingProfileVersion(id: string, versionId: string) {
+		return request<SortingProfileVersion>('POST', `/api/profiles/${id}/versions/${versionId}/publish`);
+	},
 	saveSortingProfileToLibrary(id: string) {
 		return request<{ ok: boolean }>('POST', `/api/profiles/${id}/library`);
 	},

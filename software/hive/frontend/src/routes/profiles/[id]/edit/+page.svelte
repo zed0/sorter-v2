@@ -80,6 +80,7 @@
 	let savingVersion = $state(false);
 	let showSavePopover = $state(false);
 	let changeNote = $state('');
+	let publishOnSave = $state(false);
 	let catalogColors = $state<ProfileCatalogColor[]>([]);
 	let catalogColorsLoading = $state(false);
 	let csvImportFileInput: HTMLInputElement | undefined = $state(undefined);
@@ -888,9 +889,12 @@
 				default_category_id: workingDefaultCategoryId,
 				rules: workingRules,
 				fallback_mode: workingFallbackMode,
-				change_note: changeNote || null
+				change_note: changeNote || null,
+				publish: publishOnSave
 			});
-			success = `Saved version ${version.version_number}.`;
+			success = version.is_published
+				? `Saved and published version ${version.version_number}.`
+				: `Saved version ${version.version_number}.`;
 			showSavePopover = false;
 			changeNote = '';
 			lastLoadedProfileId = '';
@@ -1158,6 +1162,13 @@
 							</div>
 						{/if}
 					</div>
+					<label class="mb-3 flex items-start gap-2 text-xs text-text">
+						<input type="checkbox" bind:checked={publishOnSave} class="mt-0.5" />
+						<span>
+							Publish this version
+							<span class="block text-text-muted">Makes it available to others when the profile is public or unlisted.</span>
+						</span>
+					</label>
 					<div class="flex justify-end gap-2">
 						<Button variant="secondary" size="sm" onclick={closeSavePopover}>Cancel</Button>
 						<Button size="sm" onclick={() => void saveVersion()} disabled={savingVersion} loading={savingVersion}>
