@@ -5,6 +5,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from time import perf_counter
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -231,10 +232,11 @@ def preview_sorting_rule(
 def list_profiles(
     scope: str = Query(default="discover"),
     q: str = Query(default=""),
+    sort: Literal["updated", "library"] = Query(default="updated"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    profiles = _query_profiles_for_scope(db, current_user, scope, q)
+    profiles = _query_profiles_for_scope(db, current_user, scope, q, sort)
     saved_profile_ids = _saved_profile_ids(db, current_user.id)
     return [_serialize_profile_summary(db, profile, current_user, saved_profile_ids) for profile in profiles]
 
@@ -1122,7 +1124,13 @@ def report_machine_profile_activation(
     return _serialize_machine_assignment(db, assignment, machine.owner, _saved_profile_ids(db, machine.owner_id))
 
 
-def _query_profiles_for_scope(db: Session, current_user: User, scope: str, query: str) -> list[SortingProfile]:
+def _query_profiles_for_scope(
+    db: Session,
+    current_user: User,
+    scope: str,
+    query: str,
+    sort: str = "updated",
+) -> list[SortingProfile]:
     q = db.query(SortingProfile)
     search = f"%{query.lower()}%" if query else None
     if scope == "mine":
@@ -1148,7 +1156,11 @@ def _query_profiles_for_scope(db: Session, current_user: User, scope: str, query
                 SortingProfile.description.ilike(search),
             )
         )
-    return q.order_by(SortingProfile.updated_at.desc()).all()
+    if sort == "library":
+        q = q.order_by(SortingProfile.library_count.desc(), SortingProfile.updated_at.desc())
+    else:
+        q = q.order_by(SortingProfile.updated_at.desc())
+    return q.all()
 
 
 def _saved_profile_ids(db: Session, user_id: UUID) -> set[UUID]:

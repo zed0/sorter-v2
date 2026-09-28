@@ -403,6 +403,39 @@ class TestPublicProfiles:
         assert len(detail["versions"]) == 1
         assert detail["versions"][0]["version_number"] == published_version["version_number"]
 
+    def test_discover_sort_by_library_count(
+        self, client: TestClient, auth_headers: dict[str, str], test_user: dict
+    ) -> None:
+        quiet = _create_profile(client, auth_headers, visibility="public", name="Quiet")
+        _create_version(client, auth_headers, quiet["id"], name="Quiet", publish=True)
+        popular = _create_profile(client, auth_headers, visibility="public", name="Popular")
+        _create_version(client, auth_headers, popular["id"], name="Popular", publish=True)
+        hidden = _create_profile(client, auth_headers, visibility="private", name="Hidden")
+        _create_version(client, auth_headers, hidden["id"], name="Hidden", publish=True)
+
+        for email in ("fan1@test.com", "fan2@test.com"):
+            client.post("/api/auth/logout", headers=_auth_headers(client))
+            _register_user(client, email, "Password123!", "Fan")
+            _login_user(client, email, "Password123!")
+            save = client.post(f"/api/profiles/{popular['id']}/library", headers=_auth_headers(client))
+            assert save.status_code == 200, save.text
+
+        # Touch Quiet last so the default updated_at order puts it first.
+        client.post("/api/auth/logout", headers=_auth_headers(client))
+        _login_user(client, test_user["email"], test_user["password"])
+        _create_version(client, _auth_headers(client), quiet["id"], name="Quiet", publish=True)
+
+        by_updated = [p["name"] for p in client.get("/api/profiles?scope=discover").json()]
+        assert by_updated == ["Quiet", "Popular"]
+
+        response = client.get("/api/profiles?scope=discover&sort=library")
+        assert response.status_code == 200, response.text
+        ranked = response.json()
+        assert [p["name"] for p in ranked] == ["Popular", "Quiet"]
+        assert [p["library_count"] for p in ranked] == [2, 0]
+
+        assert client.get("/api/profiles?scope=discover&sort=bogus").status_code == 422
+
 
 class TestCommunityAndMachineFlows:
     def test_library_fork_assignment_and_machine_token_endpoints(
