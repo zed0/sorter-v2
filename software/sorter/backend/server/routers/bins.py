@@ -23,6 +23,7 @@ from bin_contents import (
     get_current_bin_contents_snapshot,
     get_current_bin_contents_version,
     get_current_bin_pieces,
+    get_current_discard_contents,
     get_distributed_part_keys_since,
     list_bin_snapshots,
 )
@@ -1016,3 +1017,11 @@ def get_bin_contents(include_images: bool = False) -> Dict[str, Any]:
             except Exception as exc:
                 raise HTTPException(status_code=500, detail=f"Failed to build bin contents: {exc}")
     return result if include_images else _strip_bin_content_images(result)
+
+
+@router.get("/api/bins/discard")
+def get_discard_contents(limit: int = 24) -> Dict[str, Any]:
+    # Always includes images: capped at `limit` recent pieces (default 24), so
+    # unlike the full bin grid this can't grow into the multi-MB payload
+    # _strip_bin_content_images exists to avoid.
+    return get_current_discard_contents(limit=max(1, min(limit, 100)))

@@ -133,6 +133,40 @@ def _createTables(conn: sqlite3.Connection) -> None:
         "CREATE INDEX IF NOT EXISTS idx_piece_events_bin_epoch "
         "ON piece_events(session_id, layer_index, section_index, bin_index, bin_epoch)"
     )
+    # Pieces that never reached a real bin: the discard passthrough (no bin
+    # for the category, an untrusted multi-drop, too big for every layer,
+    # ...). Same shape as piece_events without the bin columns. A piece that
+    # short-circuits to a terminal status without running the burst-capture
+    # pipeline (a multi-drop) has no thumbnail/top/bottom image, so the live
+    # tracking crop (latest_captured_crop) is kept as its only photo.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS discard_events ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+        "session_id TEXT NOT NULL, "
+        "piece_uuid TEXT NOT NULL, "
+        "distributed_at REAL NOT NULL, "
+        "created_at REAL, "
+        "classified_at REAL, "
+        "part_id TEXT, "
+        "color_id TEXT, "
+        "color_name TEXT, "
+        "category_id TEXT, "
+        "classification_status TEXT, "
+        "discard_reason TEXT, "
+        "thumbnail TEXT, "
+        "top_image TEXT, "
+        "bottom_image TEXT, "
+        "latest_captured_crop TEXT, "
+        "brickognize_preview_url TEXT, "
+        "UNIQUE(session_id, piece_uuid), "
+        "FOREIGN KEY(session_id) REFERENCES sorting_sessions(id) ON DELETE CASCADE"
+        ")"
+    )
+    db.add_columns(conn, "discard_events", {"latest_captured_crop": "TEXT"})
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_discard_events_session "
+        "ON discard_events(session_id, distributed_at)"
+    )
     conn.execute(
         "CREATE TABLE IF NOT EXISTS bin_events ("
         "id INTEGER PRIMARY KEY AUTOINCREMENT, "
@@ -486,6 +520,106 @@ def record_piece_distribution(piece: dict[str, Any]) -> None:
         )
         conn.commit()
         _refresh_bin_piece_counts(conn)
+
+
+# Ordered so a piece matching more than one condition (e.g. too_big AND
+# unclassified) reports the reason that explains why it never reached
+# bin assignment, not a downstream symptom of it.
+def _discardReason(piece: dict[str, Any]) -> str:
+    status = piece.get("classification_status")
+    status = getattr(status, "value", status)
+    if piece.get("too_big"):
+        return "too_big"
+    if piece.get("too_big_for_layer"):
+        return "too_big_for_layer"
+    if status == "multi_drop_fail":
+        return "multi_drop"
+    if status == "failed":
+        return "id_request_failed"
+    if status in ("unknown", "not_found"):
+        return "unidentified"
+    # Classified (or otherwise resolved) but its category has no bin assigned.
+    return "no_bin_for_category"
+
+
+def record_piece_discard(piece: dict[str, Any]) -> None:
+    """Log a piece that fell through to the discard passthrough: the
+    destination_bin=None counterpart to record_piece_distribution."""
+    if not isinstance(piece, dict):
+        return
+    piece_uuid = piece.get("uuid")
+    distributed_at = piece.get("distributed_at")
+    if not isinstance(piece_uuid, str) or not piece_uuid.strip():
+        return
+    if not isinstance(distributed_at, (int, float)):
+        return
+
+    with _connection() as conn:
+        session = _ensure_active_sorting_session_conn(conn, force_new=False)
+        conn.execute(
+            "INSERT OR IGNORE INTO discard_events(session_id, piece_uuid, distributed_at, "
+            "created_at, classified_at, part_id, color_id, color_name, category_id, "
+            "classification_status, discard_reason, thumbnail, top_image, bottom_image, "
+            "latest_captured_crop, brickognize_preview_url) "
+            "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                str(session["id"]),
+                piece_uuid,
+                float(distributed_at),
+                piece.get("created_at"),
+                piece.get("classified_at"),
+                piece.get("part_id"),
+                piece.get("color_id"),
+                piece.get("color_name"),
+                piece.get("category_id"),
+                piece.get("classification_status"),
+                _discardReason(piece),
+                piece.get("thumbnail"),
+                piece.get("top_image"),
+                piece.get("bottom_image"),
+                piece.get("latest_captured_crop"),
+                piece.get("brickognize_preview_url"),
+            ),
+        )
+        conn.commit()
+
+
+def get_current_discard_contents(limit: int = 24) -> dict[str, Any]:
+    with _connection() as conn:
+        active_session_id = _get_meta(conn, _META_KEY_ACTIVE_SORTING_SESSION_ID)
+        if not active_session_id:
+            return {"count": 0, "recent_pieces": []}
+
+        count_row = conn.execute(
+            "SELECT COUNT(*) AS n FROM discard_events WHERE session_id = ?",
+            (active_session_id,),
+        ).fetchone()
+        count = int(count_row["n"]) if count_row is not None else 0
+
+        rows = conn.execute(
+            "SELECT * FROM discard_events WHERE session_id = ? "
+            "ORDER BY distributed_at DESC LIMIT ?",
+            (active_session_id, max(1, int(limit))),
+        ).fetchall()
+        recent_pieces = [
+            {
+                "uuid": row["piece_uuid"],
+                "part_id": row["part_id"],
+                "color_id": row["color_id"],
+                "color_name": row["color_name"],
+                "category_id": row["category_id"],
+                "classification_status": row["classification_status"],
+                "discard_reason": row["discard_reason"],
+                "distributed_at": row["distributed_at"],
+                "thumbnail": row["thumbnail"],
+                "top_image": row["top_image"],
+                "bottom_image": row["bottom_image"],
+                "latest_captured_crop": row["latest_captured_crop"],
+                "brickognize_preview_url": row["brickognize_preview_url"],
+            }
+            for row in rows
+        ]
+        return {"count": count, "recent_pieces": recent_pieces}
 
 
 def get_distributed_part_keys_since(since_ts: float) -> list[tuple[str | None, str | None]]:

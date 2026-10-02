@@ -48,6 +48,30 @@ export type BinContents = {
 	recent_pieces: BinContentItem[];
 };
 
+export type DiscardPiece = {
+	uuid: string;
+	part_id?: string | null;
+	color_id?: string | null;
+	color_name?: string | null;
+	category_id?: string | null;
+	classification_status?: string | null;
+	discard_reason?: string | null;
+	distributed_at?: number | null;
+	thumbnail?: string | null;
+	top_image?: string | null;
+	bottom_image?: string | null;
+	// The live per-frame tracking crop — the only image evidence for a piece
+	// that short-circuited straight to a terminal status without ever running
+	// the burst-capture/classify pipeline (e.g. a multi-drop).
+	latest_captured_crop?: string | null;
+	brickognize_preview_url?: string | null;
+};
+
+export type DiscardContents = {
+	count: number;
+	recent_pieces: DiscardPiece[];
+};
+
 export type SetProgressSummary = { total_needed: number; total_found: number; pct: number };
 
 export type SetMeta = { name: string; set_num?: string; img_url?: string };

@@ -11,7 +11,7 @@
 	import LayerPanel from '$lib/components/bins/LayerPanel.svelte';
 	import { categoryLabel } from '$lib/components/bins/pieces';
 	import SnapshotsModal from '$lib/components/bins/SnapshotsModal.svelte';
-	import type { BinContents, BinInfo, LayerInfo, SetMeta, SetProgressSummary } from '$lib/components/bins/types';
+	import type { BinContents, BinInfo, DiscardContents, LayerInfo, SetMeta, SetProgressSummary } from '$lib/components/bins/types';
 	import Alert from '$lib/components/ui/Alert.svelte';
 	import Button from '$lib/components/ui/Button.svelte';
 	import EmptyState from '$lib/components/ui/EmptyState.svelte';
@@ -72,6 +72,7 @@
 	let niiBusyLayer = $state<number | null>(null);
 	let setProgressByCategoryId = $state<Record<string, SetProgressSummary>>({});
 	let searchQuery = $state('');
+	let discardContents = $state<DiscardContents | null>(null);
 
 	const searchActive = $derived(searchQuery.trim().length > 0);
 
@@ -248,6 +249,16 @@
 			setProgressByCategoryId = next;
 		} catch {
 			// Keep last known progress on transient failures.
+		}
+	}
+
+	async function loadDiscardContents() {
+		try {
+			const res = await fetch(`${baseUrl()}/api/bins/discard`);
+			if (!res.ok) return;
+			discardContents = (await res.json()) as DiscardContents;
+		} catch {
+			// Keep last known contents on transient failures.
 		}
 	}
 
@@ -665,12 +676,15 @@
 		void loadBinContents();
 		void loadSetProgress();
 		void loadBinSettings();
+		void loadDiscardContents();
 		void sortingProfileStore.load(baseUrl()).catch(() => {});
 		// Auto-update without hammering the machine: the fast tick fetches the
 		// small layout payload (live chute angle) plus a tiny contents version
 		// token — the heavy contents fetch only runs when that token changes.
-		// Set progress moves to a slow multiple, and everything pauses while the
-		// tab is hidden so a backgrounded tab can't saturate the machine's uplink.
+		// Set progress and the discard bucket move to a slow multiple (discard
+		// carries real images, so it's not worth polling every tick), and
+		// everything pauses while the tab is hidden so a backgrounded tab
+		// can't saturate the machine's uplink.
 		let tick = 0;
 		const interval = setInterval(() => {
 			if (document.hidden) return;
@@ -678,12 +692,14 @@
 			void loadLayout();
 			void pollBinContentsVersion();
 			if (tick % 5 === 0) void loadSetProgress();
+			if (tick % 5 === 0) void loadDiscardContents();
 		}, 2000);
 		const onVisibilityChange = () => {
 			if (document.hidden) return;
 			void loadLayout();
 			void loadBinContents();
 			void loadSetProgress();
+			void loadDiscardContents();
 		};
 		document.addEventListener('visibilitychange', onVisibilityChange);
 		return () => {
@@ -711,10 +727,12 @@
 		clearingStates = [];
 		togglingLayerKey = null;
 		searchQuery = '';
+		discardContents = null;
 		void loadLayout();
 		void loadBinContents();
 		void loadSetProgress();
 		void loadBinSettings();
+		void loadDiscardContents();
 		void sortingProfileStore.load(nextBaseUrl).catch(() => {});
 	});
 
@@ -926,7 +944,7 @@
 				/>
 			{/each}
 
-			<DiscardBinCard />
+			<DiscardBinCard discard={discardContents} />
 		{/if}
 	</div>
 </AppShell>
