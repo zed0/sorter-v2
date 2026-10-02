@@ -21,6 +21,15 @@ CMD_INIT = 0x00
 CMD_REBOOT_BOOTLOADER = 0x02
 CMD_GET_VERSION = 0x04
 
+# Maps a --board value to the device_name the target firmware reports (see
+# INIT_DEVICE_NAME in CMakeLists.txt / the per-board Makefile targets). Used
+# to find the right serial port when more than one Pico is plugged in.
+BOARD_DEVICE_NAMES = {
+    "feeder": "FEEDER MB",
+    "distribution": "DISTRIBUTION MB",
+    "protoboard": "CHUTE",
+}
+
 
 def _cobs_encode(message: bytes) -> bytearray:
     outbuf = bytearray(b"\x01")
@@ -76,18 +85,34 @@ def _enumerate_picos() -> list[str]:
     return [p.device for p in serial.tools.list_ports.comports() if p.vid == PICO_VID and p.pid == PICO_PID]
 
 
-def _identify_board(port: str) -> str | None:
+# Address range to probe when identifying a board — mirrors MCUBus.scan_devices()
+# in hardware/bus.py. Most boards default to address 0x00 (INIT_DEVICE_ADDRESS in
+# CMakeLists.txt), but some are built with an explicit non-zero address (e.g. the
+# protoboard chute board at 0x02), so we can't just assume 0.
+PROBE_ADDRESSES = range(16)
+
+
+def _identify_board(port: str) -> tuple[int, str] | None:
+    """Return (address, device_name) for the board on `port`, or None if nothing
+    responded at any probed address."""
     try:
         with serial.Serial(port, baudrate=576000, timeout=0.5) as ser:
-            payload = _send_recv(ser, 0x00, CMD_INIT, 0, b"")
-            return json.loads(payload.decode()).get("device_name")
+            for address in PROBE_ADDRESSES:
+                try:
+                    payload = _send_recv(ser, address, CMD_INIT, 0, b"")
+                except Exception:
+                    continue
+                name = json.loads(payload.decode()).get("device_name")
+                if name:
+                    return address, name
     except Exception:
-        return None
+        pass
+    return None
 
 
-def _reboot_to_bootloader(port: str) -> None:
+def _reboot_to_bootloader(port: str, address: int) -> None:
     with serial.Serial(port, baudrate=576000, timeout=0.5) as ser:
-        ser.write(_build_frame(0x00, CMD_REBOOT_BOOTLOADER, 0, b""))
+        ser.write(_build_frame(address, CMD_REBOOT_BOOTLOADER, 0, b""))
         time.sleep(0.1)
 
 
@@ -155,7 +180,7 @@ def _wait_for_unmount(timeout: float = 15.0) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="OTA flash a Pico board via USB bootloader reboot")
-    parser.add_argument("--board", required=True, choices=["feeder", "distribution"])
+    parser.add_argument("--board", required=True, choices=list(BOARD_DEVICE_NAMES))
     parser.add_argument("--uf2", help="Path to .uf2 (default: build-<board>/sorter_interface_firmware.uf2)")
     args = parser.parse_args()
 
@@ -164,7 +189,7 @@ def main() -> None:
     if not os.path.isfile(uf2_path):
         sys.exit(f"UF2 not found: {uf2_path}")
 
-    target_name = "FEEDER MB" if args.board == "feeder" else "DISTRIBUTION MB"
+    target_name = BOARD_DEVICE_NAMES[args.board]
 
     # Check if board is already in bootloader mode before scanning serial ports
     if _find_rpi_rp2():
@@ -180,12 +205,15 @@ def main() -> None:
             sys.exit("No Pico boards found over USB")
 
         target_port = None
+        target_address = None
         for port in ports:
-            name = _identify_board(port)
+            found = _identify_board(port)
+            name = found[1] if found else None
             marker = " <-- target" if name == target_name else ""
             print(f"  {port}: {name or '(unresponsive)'}{marker}")
             if name == target_name:
                 target_port = port
+                target_address = found[0]
 
         if not target_port:
             if platform.system() != "Darwin" and _find_rpi_rp2_blockdev():
@@ -194,7 +222,7 @@ def main() -> None:
                 sys.exit(f"Board '{target_name}' not found")
         else:
             print(f"Rebooting {target_name} to bootloader...")
-            _reboot_to_bootloader(target_port)
+            _reboot_to_bootloader(target_port, target_address)
 
     print("Waiting for RPI-RP2 drive...")
     try:

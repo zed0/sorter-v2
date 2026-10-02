@@ -15,7 +15,8 @@ endif
 .PHONY: setup build \
         build-feeder-v1-1 build-distribution-v1-1 flash-feeder-v1-1 flash-distribution-v1-1 \
         build-feeder-v1-2 build-distribution-v1-2 flash-feeder-v1-2 flash-distribution-v1-2 \
-        build-feeder-skr build-distribution-skr
+        build-feeder-skr build-distribution-skr \
+        build-protoboard flash-protoboard
 
 setup: $(PICO_SDK_PATH)/pico_sdk_init.cmake
 
@@ -67,3 +68,11 @@ build-distribution-skr: setup
 	@mkdir -p build-distribution-skr
 	@cd build-distribution-skr && CC=$(HOST_CC) CXX=$(HOST_CXX) cmake -DFIRMWARE_ROLE=distribution -DHW_SKR_PICO=ON $(CMAKE_FLAGS) .. && CC=$(HOST_CC) CXX=$(HOST_CXX) make -j$(NPROC)
 	@echo "Distribution SKR Pico firmware built: build-distribution-skr/sorter_interface_firmware.uf2"
+
+build-protoboard: setup
+	@mkdir -p build-protoboard
+	@cd build-protoboard && CC=$(HOST_CC) CXX=$(HOST_CXX) cmake -DFIRMWARE_ROLE=distribution -DHW_PROTOBOARD=ON -DINIT_DEVICE_NAME="CHUTE" -DINIT_DEVICE_ADDRESS=0x02 $(CMAKE_FLAGS) .. && CC=$(HOST_CC) CXX=$(HOST_CXX) make -j$(NPROC)
+	@echo "Protoboard firmware built: build-protoboard/sorter_interface_firmware.uf2"
+
+flash-protoboard: build-protoboard
+	python3 flash.py --board protoboard --uf2 build-protoboard/sorter_interface_firmware.uf2
