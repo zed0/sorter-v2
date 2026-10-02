@@ -100,6 +100,23 @@ takes a piece only while the kit still needs that part and color
 next entry that takes it. A sorter without the program keeps sending such
 pieces to the kit's bin.
 
+## Sharing: visibility and libraries
+
+A profile is `private`, `unlisted` or `public`. Public profiles with a
+published version are listed under `scope=discover` (the Public tab), most
+saved first with `sort=library`; unlisted ones are reachable by link only.
+Anyone may save a profile they can see to their library
+(`POST /api/profiles/{id}/library`), the owner included; a machine can only be
+given a profile its owner made or saved (or one of Hive's defaults).
+
+Making a profile private hides it from everyone who has not saved it, but not
+from those who have: `_require_profile_view_access` and
+`_require_profile_assignable` admit a library holder, so they keep viewing,
+forking and assigning its published versions, and get the versions published
+after. People other than the owner never see drafts
+(`_resolve_visible_version`). The owner is warned of this when they switch a
+shared profile to private.
+
 ## Hive's default profiles
 
 `app/services/default_profiles.py` defines profiles every machine gets

@@ -395,7 +395,7 @@ def route_pieces(
         if payload.profile_id is None:
             raise APIError(400, "Give a document or a profile_id", "PROFILE_ROUTE_TARGET_MISSING")
         profile = _get_profile_or_404(db, payload.profile_id)
-        _require_profile_view_access(profile, current_user)
+        _require_profile_view_access(db, profile, current_user)
         version = _resolve_visible_version(profile, current_user, payload.version_id)
         if version is None:
             raise APIError(404, "Version not found", "PROFILE_VERSION_NOT_FOUND")
@@ -530,7 +530,7 @@ def get_profile(
     current_user: User = READ,
 ):
     profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(profile, current_user)
+    _require_profile_view_access(db, profile, current_user)
     saved_profile_ids = _saved_profile_ids(db, current_user.id)
     current_version = _resolve_visible_version(profile, current_user, version_id)
     return _serialize_profile_detail(db, profile, current_user, saved_profile_ids, current_version=current_version)
@@ -546,7 +546,7 @@ def get_profile_head(
     open page to ask every few seconds, so a change made elsewhere (by an
     assistant through the API, say) shows up without a reload."""
     profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(profile, current_user)
+    _require_profile_view_access(db, profile, current_user)
     query = db.query(SortingProfileVersion).filter(SortingProfileVersion.profile_id == profile.id)
     if profile.owner_id != current_user.id:
         query = query.filter(SortingProfileVersion.is_published.is_(True))
@@ -572,7 +572,7 @@ def get_profile_set_progress(
     from app.models.machine_set_progress import MachineSetProgress
 
     profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(profile, current_user)
+    _require_profile_view_access(db, profile, current_user)
 
     assignments = (
         db.query(MachineProfileAssignment)
@@ -682,7 +682,7 @@ def save_profile_to_library(
     _csrf: None = Depends(verify_csrf),
 ):
     profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(profile, current_user)
+    _require_profile_view_access(db, profile, current_user)
     if not db.query(SortingProfileLibraryEntry).filter(
         SortingProfileLibraryEntry.user_id == current_user.id,
         SortingProfileLibraryEntry.profile_id == profile.id,
@@ -725,7 +725,7 @@ def fork_profile(
     _csrf: None = Depends(verify_csrf),
 ):
     source_profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(source_profile, current_user)
+    _require_profile_view_access(db, source_profile, current_user)
     source_version = _resolve_visible_version(source_profile, current_user, version_id)
     if source_version is None:
         raise APIError(404, "No source version found for fork", "PROFILE_VERSION_NOT_FOUND")
@@ -868,7 +868,7 @@ def get_profile_artifact(
     """What a sorter runs for a version. "legacy" is the flat part map sorters
     from before the program read (and their local profile upload takes)."""
     profile = _get_profile_or_404(db, profile_id)
-    _require_profile_view_access(profile, current_user)
+    _require_profile_view_access(db, profile, current_user)
     version = _resolve_visible_version(profile, current_user, version_id)
     if version is None:
         raise APIError(404, "Version not found", "PROFILE_VERSION_NOT_FOUND")
@@ -1604,12 +1604,28 @@ def _resolve_visible_version(
     return published[0]
 
 
-def _require_profile_view_access(profile: SortingProfile, current_user: User) -> None:
+def _require_profile_view_access(db: Session, profile: SortingProfile, current_user: User) -> None:
     if profile.owner_id == current_user.id:
         return
     if profile.visibility in {"public", "unlisted"}:
         return
+    # Going private stops new people finding a profile, but anyone who already
+    # saved it keeps its published versions (non-owners never see drafts).
+    if _in_library(db, current_user.id, profile.id):
+        return
     raise APIError(403, "You do not have access to this profile", "PROFILE_ACCESS_DENIED")
+
+
+def _in_library(db: Session, user_id: UUID, profile_id: UUID) -> bool:
+    return (
+        db.query(SortingProfileLibraryEntry.id)
+        .filter(
+            SortingProfileLibraryEntry.user_id == user_id,
+            SortingProfileLibraryEntry.profile_id == profile_id,
+        )
+        .first()
+        is not None
+    )
 
 
 def _require_profile_edit_access(profile: SortingProfile, current_user: User) -> None:
@@ -1620,10 +1636,9 @@ def _require_profile_edit_access(profile: SortingProfile, current_user: User) ->
 def _require_profile_assignable(profile: SortingProfile, current_user: User, db: Session) -> None:
     if profile.owner_id == current_user.id or profile.default_rank is not None:
         return
-    if profile.visibility not in {"public", "unlisted"}:
-        raise APIError(403, "This profile cannot be assigned", "PROFILE_ASSIGN_DENIED")
-    saved_profile_ids = _saved_profile_ids(db, current_user.id)
-    if profile.id not in saved_profile_ids:
+    if not _in_library(db, current_user.id, profile.id):
+        if profile.visibility not in {"public", "unlisted"}:
+            raise APIError(403, "This profile cannot be assigned", "PROFILE_ASSIGN_DENIED")
         raise APIError(403, "Save the profile to your library before assigning it", "PROFILE_LIBRARY_REQUIRED")
 
 

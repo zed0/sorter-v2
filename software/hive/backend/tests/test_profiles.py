@@ -384,6 +384,48 @@ class TestPublicProfiles:
 
         assert client.get("/api/profiles?scope=discover&sort=bogus").status_code == 422
 
+    def test_private_profile_stays_usable_for_existing_library_holders(
+        self, client: TestClient, auth_headers: dict[str, str], test_user: dict
+    ) -> None:
+        shared = _create_profile(client, auth_headers, visibility="public", name="Shared")
+        published = _create_version(client, auth_headers, shared["id"], name="Shared", publish=True)
+
+        client.post("/api/auth/logout", headers=_auth_headers(client))
+        _register_user(client, "fan@test.com", "Password123!", "Fan")
+        _login_user(client, "fan@test.com", "Password123!")
+        save = client.post(f"/api/profiles/{shared['id']}/library", headers=_auth_headers(client))
+        assert save.status_code == 200, save.text
+
+        # The owner makes it private and keeps working on a draft.
+        client.post("/api/auth/logout", headers=_auth_headers(client))
+        _login_user(client, test_user["email"], test_user["password"])
+        owner_headers = _auth_headers(client)
+        response = client.patch(f"/api/profiles/{shared['id']}", json={"visibility": "private"}, headers=owner_headers)
+        assert response.status_code == 200, response.text
+        _create_version(client, owner_headers, shared["id"], name="Shared", publish=False)
+
+        client.post("/api/auth/logout", headers=_auth_headers(client))
+        _login_user(client, "fan@test.com", "Password123!")
+        library = client.get("/api/profiles?scope=library").json()
+        assert [p["id"] for p in library] == [shared["id"]]
+        assert shared["id"] not in [p["id"] for p in client.get("/api/profiles?scope=discover").json()]
+
+        detail = client.get(f"/api/profiles/{shared['id']}")
+        assert detail.status_code == 200, detail.text
+        assert [v["id"] for v in detail.json()["versions"]] == [published["id"]]
+        artifact = client.get(f"/api/profiles/{shared['id']}/versions/{published['id']}/artifact")
+        assert artifact.status_code == 200, artifact.text
+        fork = client.post(f"/api/profiles/{shared['id']}/fork", json={}, headers=_auth_headers(client))
+        assert fork.status_code == 200, fork.text
+
+        # Someone who never saved it is still kept out.
+        client.post("/api/auth/logout", headers=_auth_headers(client))
+        _register_user(client, "stranger@test.com", "Password123!", "Stranger")
+        _login_user(client, "stranger@test.com", "Password123!")
+        assert client.get(f"/api/profiles/{shared['id']}").status_code == 403
+        save = client.post(f"/api/profiles/{shared['id']}/library", headers=_auth_headers(client))
+        assert save.status_code == 403
+
 
 class TestCommunityAndMachineFlows:
     def test_library_fork_assignment_and_machine_token_endpoints(

@@ -57,6 +57,10 @@
 	let publishingId = $state<string | null>(null);
 	let showDeleteModal = $state(false);
 	let deletingProfile = $state(false);
+	// library_count includes the owner if they saved their own profile.
+	const otherLibraryCount = $derived(
+		profile ? Math.max(profile.library_count - (profile.saved_in_library ? 1 : 0), 0) : 0
+	);
 
 	// A change made elsewhere (an assistant through the API, the editor in
 	// another tab), and what it changed, until it is dismissed.
@@ -679,6 +683,14 @@
 							]}
 						/>
 					</Field>
+					{#if settingsVisibility === 'private' && profile.visibility !== 'private'}
+						<Alert tone="warning">
+							Making this profile private hides it from Public and stops anyone new from saving it.
+							Anyone who already has it in their library{#if otherLibraryCount > 0}
+								({plural(otherLibraryCount, 'person', 'people')}){/if} can still use the versions you've
+							published, and the ones you publish from now on. Drafts stay hidden.
+						</Alert>
+					{/if}
 					<Field label="Tags" for="s-tags" help="Separate tags with commas.">
 						<Input id="s-tags" bind:value={settingsTags} placeholder="starter, workshop, plates" />
 					</Field>

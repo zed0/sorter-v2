@@ -183,7 +183,7 @@ them. Put kit rules **above** broader rules, or those take the parts first
 | `GET /api/profiles/{id}` | a profile, its versions, and the current version's rules and bins |
 | `GET /api/profiles/{id}/head` | the latest version number, cheap, to see if it changed |
 | `POST /api/profiles` | a new profile: `name`, `description`, `rules`, `fallback_mode` |
-| `PATCH /api/profiles/{id}` | rename, describe, `visibility` (`private`, `unlisted`, `public`) |
+| `PATCH /api/profiles/{id}` | rename, describe, `visibility` (`private`, `unlisted`, `public`); going private does not take published versions away from people who already saved it |
 | `POST /api/profiles/{id}/versions` | save the next version: the whole document, `change_note`, `publish` |
 | `POST /api/profiles/{id}/versions/{version_id}/publish` | let other people's machines use a version |
 | `POST /api/profiles/{id}/fork` | a copy of someone's public profile for the person to change |
