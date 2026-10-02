@@ -1,10 +1,18 @@
 """OTA flash a Pico board by triggering a bootloader reboot over USB, then copying the UF2."""
 
+# /// script
+# requires-python = ">=3.9"
+# dependencies = [
+#     "pyserial>=3.5",
+# ]
+# ///
+
 import argparse
 import glob
 import json
 import os
 import platform
+import re
 import shutil
 import struct
 import sys
@@ -150,6 +158,28 @@ def _find_rpi_rp2() -> str | None:
     return None
 
 
+def _udisksctl_mount(dev: str) -> str | None:
+    """Try to mount `dev` via udisksctl, which polkit grants to the active
+    logged-in user on most desktop Linux systems without root. Returns the
+    mount point on success, or None if udisksctl is missing or refuses (e.g.
+    no polkit agent, no active desktop session) so the caller can fall back.
+    """
+    try:
+        import subprocess
+        result = subprocess.run(
+            ["udisksctl", "mount", "-b", dev, "--no-user-interaction"],
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return None
+    combined = result.stdout + result.stderr
+    # Success: "Mounted /dev/sdb1 at /media/user/RPI-RP2."
+    # Already mounted: "Error mounting ...: ... already mounted at `/media/user/RPI-RP2'."
+    match = re.search(r"[Mm]ounted(?: \S+)? at [`']?([^`'\n]+?)[`']?\.?\s*$", combined)
+    return match.group(1) if match else None
+
+
 def _wait_for_mount(timeout: float = 30.0) -> str:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -159,10 +189,23 @@ def _wait_for_mount(timeout: float = 30.0) -> str:
         if platform.system() != "Darwin":
             dev = _find_rpi_rp2_blockdev()
             if dev:
-                import subprocess
-                os.makedirs(LINUX_MOUNT_POINT, exist_ok=True)
-                subprocess.run(["mount", dev, LINUX_MOUNT_POINT], check=True)
-                return LINUX_MOUNT_POINT
+                mount_point = _udisksctl_mount(dev)
+                if mount_point:
+                    return mount_point
+                # Fall back to a plain mount, which needs root — works when
+                # this script itself is already running as root (containers,
+                # some CI), but not for a regular user without udisks.
+                try:
+                    import subprocess
+                    os.makedirs(LINUX_MOUNT_POINT, exist_ok=True)
+                    subprocess.run(["mount", dev, LINUX_MOUNT_POINT], check=True)
+                    return LINUX_MOUNT_POINT
+                except (PermissionError, OSError) as exc:
+                    raise RuntimeError(
+                        f"Found {dev} (RPI-RP2) but could not mount it: {exc}. "
+                        "Install udisks2 for unprivileged mounting, or mount it "
+                        f"manually (e.g. `udisksctl mount -b {dev}`) and re-run."
+                    ) from exc
         time.sleep(0.5)
     raise TimeoutError(f"RPI-RP2 did not mount within {timeout:.0f}s")
 
