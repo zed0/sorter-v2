@@ -91,7 +91,7 @@
 			},
 			library: {
 				title: 'Your library is empty',
-				text: "Save one of Hive's defaults or a public profile and it is kept here."
+				text: "Save one of your profiles, one of Hive's defaults or a public profile and it is kept here."
 			},
 			defaults: { title: 'No defaults', text: 'Hive has no default profiles.' },
 			discover: {

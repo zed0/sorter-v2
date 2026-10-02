@@ -484,17 +484,14 @@
 			{/if}
 		</div>
 		{#snippet actions()}
+			<Button
+				icon={profile!.saved_in_library ? Check : BookmarkPlus}
+				loading={libraryBusy}
+				onclick={() => void toggleLibrary()}>{profile!.saved_in_library ? 'In library' : 'Save to library'}</Button
+			>
 			{#if profile!.is_owner}
-				{#if profile!.saved_in_library}
-					<Button icon={Check} loading={libraryBusy} onclick={() => void toggleLibrary()}>In library</Button>
-				{/if}
 				<Button href={`/profiles/${profile!.id}/edit`} variant="primary" icon={Pencil}>Edit profile</Button>
 			{:else}
-				<Button
-					icon={profile!.saved_in_library ? Check : BookmarkPlus}
-					loading={libraryBusy}
-					onclick={() => void toggleLibrary()}>{profile!.saved_in_library ? 'In library' : 'Save to library'}</Button
-				>
 				<Button variant="primary" icon={GitFork} loading={forking} onclick={() => void forkProfile()}
 					>Fork this profile</Button
 				>
