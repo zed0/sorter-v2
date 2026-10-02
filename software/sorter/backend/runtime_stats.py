@@ -320,9 +320,64 @@ class RuntimeStatsCollector:
                     incident_records.resolveIncident(
                         self._active_incident_row_id, resolved_by="superseded"
                     )
-                self._active_incident_row_id = incident_records.openIncident(payload)
+                debug_before = self._maybeCaptureDebugSnapshot(include_pieces=True)
+                self._active_incident_row_id = incident_records.openIncident(
+                    payload, debug_before=debug_before
+                )
         except Exception as exc:
             db.report_failure("incident persist", exc)
+
+    @staticmethod
+    def _maybeCaptureDebugSnapshot(*, include_pieces: bool) -> dict[str, Any] | None:
+        # Opt-in (toml_config debug_incidents, dynamic — no restart needed) —
+        # a camera+piece-list snapshot around each incident occurrence, for
+        # diagnosing WHY it fired after the fact. Never allowed to break real
+        # incident handling: a capture failure never blocks openIncident/
+        # resolveIncident, but IS logged (unlike everywhere else in this
+        # choke point) since a silently-empty debug capture is exactly the
+        # kind of bug someone would only notice by its absence.
+        try:
+            from toml_config import debugIncidentsEnabled
+
+            if not debugIncidentsEnabled():
+                return None
+        except Exception as exc:
+            RuntimeStatsCollector._logDebugCaptureFailure(
+                f"could not read debug_incidents config: {exc!r}"
+            )
+            return None
+        try:
+            from incident_debug_capture import captureIncidentDebugSnapshot
+
+            snapshot = captureIncidentDebugSnapshot(include_pieces=include_pieces)
+        except Exception as exc:
+            RuntimeStatsCollector._logDebugCaptureFailure(f"capture raised: {exc!r}")
+            return None
+        n_cameras = len(snapshot.get("cameras") or {})
+        if n_cameras == 0:
+            RuntimeStatsCollector._logDebugCaptureFailure(
+                "capture ran but got 0 camera frames (camera_service unavailable, "
+                "or no live frame yet for any configured role)"
+            )
+        return snapshot
+
+    @staticmethod
+    def _logDebugCaptureFailure(message: str) -> None:
+        try:
+            from server import shared_state
+
+            logger = getattr(shared_state.gc_ref, "logger", None)
+            if logger is not None:
+                logger.warning(f"RuntimeStats: incident debug capture skipped — {message}")
+                return
+        except Exception:
+            pass
+        try:
+            import sys
+
+            print(f"RuntimeStats: incident debug capture skipped — {message}", file=sys.stderr)
+        except Exception:
+            pass
 
     @staticmethod
     def _incidentIdentity(payload: dict[str, Any] | None) -> tuple[Any, Any, Any, Any]:
@@ -393,7 +448,10 @@ class RuntimeStatsCollector:
             try:
                 import incident_records
 
-                incident_records.resolveIncident(row_id, resolved_by=resolved_by)
+                debug_after = self._maybeCaptureDebugSnapshot(include_pieces=False)
+                incident_records.resolveIncident(
+                    row_id, resolved_by=resolved_by, debug_after=debug_after
+                )
             except Exception as exc:
                 db.report_failure("incident resolve", exc)
 

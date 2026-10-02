@@ -1,6 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import Alert from '$lib/components/ui/Alert.svelte';
+	import KeyValue from '$lib/components/ui/KeyValue.svelte';
+	import MediaTile from '$lib/components/ui/MediaTile.svelte';
+	import Modal from '$lib/components/ui/Modal.svelte';
 	import Panel from '$lib/components/ui/Panel.svelte';
 	import Skeleton from '$lib/components/ui/Skeleton.svelte';
 	import Stat from '$lib/components/ui/Stat.svelte';
@@ -38,12 +41,63 @@
 		duration_s: number | null;
 	};
 
+	type DebugPiece = {
+		track_id: number | null;
+		uuid: string | null;
+		part_id: string | null;
+		classification_status: string | null;
+		zone: string | null;
+		placed: boolean | null;
+		capture_done: boolean | null;
+	};
+
+	type DebugSnapshot = {
+		captured_at: number | null;
+		cameras: Record<string, string>;
+		pieces: DebugPiece[] | null;
+	};
+
+	type IncidentDetail = IncidentRow & {
+		details: Record<string, unknown> | null;
+		debug_before: DebugSnapshot | null;
+		debug_after: DebugSnapshot | null;
+	};
+
 	let { endpointBase }: { endpointBase: string } = $props();
 
 	let summary = $state<Summary | null>(null);
 	let error = $state(false);
 	let rows = $state<IncidentRow[]>([]);
 	let rowsLoading = $state(false);
+
+	let detailOpen = $state(false);
+	let detailLoading = $state(false);
+	let detailError = $state<string | null>(null);
+	let detail = $state<IncidentDetail | null>(null);
+
+	async function openDetail(id: number) {
+		detailOpen = true;
+		detailLoading = true;
+		detailError = null;
+		detail = null;
+		try {
+			const res = await fetch(`${endpointBase}/api/incidents/${id}`);
+			if (!res.ok) throw new Error(await res.text());
+			detail = (await res.json()) as IncidentDetail;
+		} catch (e: any) {
+			detailError = e?.message ?? 'Failed to load incident details.';
+		} finally {
+			detailLoading = false;
+		}
+	}
+
+	function cameraRoleLabel(role: string): string {
+		return role.replace(/_/g, ' ');
+	}
+
+	function pieceShortUuid(uuid: string | null): string {
+		return uuid ? uuid.slice(0, 8) : '—';
+	}
 
 	async function loadSummary(base: string): Promise<void> {
 		try {
@@ -207,7 +261,7 @@
 						</tr>
 					{:else}
 						{#each rows as row (row.id)}
-							<tr>
+							<tr class="is-link" onclick={() => openDetail(row.id)}>
 								<td class="whitespace-nowrap text-ink-muted">{formatTimestamp(row.triggered_at)}</td>
 								<td>{formatKind(row.kind)}</td>
 								<td class="text-ink-muted">{row.channel_label ?? row.channel ?? '—'}</td>
@@ -225,3 +279,90 @@
 		</div>
 	</Panel>
 </section>
+
+<Modal
+	bind:open={detailOpen}
+	title={detail ? `${formatKind(detail.kind)}: incident #${detail.id}` : 'Incident details'}
+	size="lg"
+>
+	{#if detailLoading}
+		<div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+			{#each Array(4) as _, i (i)}
+				<Skeleton class="aspect-video w-full" />
+			{/each}
+		</div>
+	{:else if detailError}
+		<Alert tone="danger" title="Could not load the incident">{detailError}</Alert>
+	{:else if detail}
+		<div class="flex flex-col gap-6">
+			<KeyValue
+				items={[
+					{ label: 'Status', value: detail.status === 'active' ? 'Active' : 'Resolved' },
+					{ label: 'Resolved by', value: resolvedByLabel(detail.resolved_by) },
+					{ label: 'Duration', value: formatDuration(detail.duration_s) },
+					{ label: 'Channel', value: detail.channel_label ?? detail.channel ?? '—' }
+				]}
+			/>
+
+			{#if detail.operator_message || detail.reason}
+				<p class="text-sm text-ink-muted">{detail.operator_message ?? detail.reason}</p>
+			{/if}
+
+			{#if detail.debug_before || detail.debug_after}
+				{#if detail.debug_before?.pieces && detail.debug_before.pieces.length > 0}
+					<div>
+						<h3 class="text-sm font-semibold text-ink">On the classification channel when it fired</h3>
+						<div class="mt-2 overflow-x-auto">
+							<table class="data-table">
+								<thead>
+									<tr>
+										<th class="num">Track</th>
+										<th>Piece</th>
+										<th>Part</th>
+										<th>Status</th>
+										<th>Zone</th>
+									</tr>
+								</thead>
+								<tbody>
+									{#each detail.debug_before.pieces as piece, i (piece.track_id ?? piece.uuid ?? i)}
+										<tr>
+											<td class="num text-ink-muted">{piece.track_id ?? '—'}</td>
+											<td class="font-mono text-ink-muted">{pieceShortUuid(piece.uuid)}</td>
+											<td class="text-ink-muted">{piece.part_id ?? '—'}</td>
+											<td class="text-ink-muted">{piece.classification_status ?? '—'}</td>
+											<td class="text-ink-muted">{piece.zone ?? '—'}</td>
+										</tr>
+									{/each}
+								</tbody>
+							</table>
+						</div>
+					</div>
+				{/if}
+
+				{#each [{ label: 'When it fired', snapshot: detail.debug_before }, { label: 'When it was resolved', snapshot: detail.debug_after }] as group (group.label)}
+					{#if group.snapshot && Object.keys(group.snapshot.cameras ?? {}).length > 0}
+						<div>
+							<h3 class="text-sm font-semibold text-ink">{group.label}</h3>
+							<div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+								{#each Object.entries(group.snapshot.cameras) as [role, b64] (role)}
+									<MediaTile title={cameraRoleLabel(role)} expandable>
+										<img
+											class="absolute inset-0 h-full w-full object-contain"
+											src={`data:image/jpeg;base64,${b64}`}
+											alt={`${cameraRoleLabel(role)} camera, ${group.label.toLowerCase()}`}
+										/>
+									</MediaTile>
+								{/each}
+							</div>
+						</div>
+					{/if}
+				{/each}
+			{:else}
+				<p class="text-sm text-ink-muted">
+					No debug capture for this incident. Turn on "Debug capture on incidents" in Settings to
+					attach camera snapshots and the piece list to future incidents.
+				</p>
+			{/if}
+		</div>
+	{/if}
+</Modal>

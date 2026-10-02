@@ -262,6 +262,13 @@ def _incidentHandlingDefaults() -> dict[str, str]:
 
 _DASHBOARD_DEFAULTS: dict[str, Any] = {
     "show_sample_capture": False,
+    # Debug capture: when on, every NEW incident occurrence captures a JPEG
+    # from every configured camera plus the classification channel's current
+    # piece list at open, and another camera round at resolve — stashed on
+    # the incident's own db row (see incident_records.py / runtime_stats.py).
+    # Off by default: it's extra per-incident encode work, opt-in for
+    # diagnosing a recurring incident after the fact.
+    "debug_incidents": False,
 }
 
 
@@ -336,6 +343,11 @@ def incidentHandlingOff(kind: str) -> bool:
     return incidentHandlingMode(kind) == _INCIDENT_MODE_OFF
 
 
+def debugIncidentsEnabled() -> bool:
+    value = getDashboardConfig().get("debug_incidents")
+    return bool(value) if isinstance(value, bool) else False
+
+
 def getDashboardConfig() -> dict[str, Any]:
     """Return dashboard preferences merged on top of defaults."""
     config = machine_toml.read()
@@ -343,12 +355,16 @@ def getDashboardConfig() -> dict[str, Any]:
     merged = {
         "show_sample_capture": bool(_DASHBOARD_DEFAULTS["show_sample_capture"]),
         "incident_handling": _incidentHandlingDefaults(),
+        "debug_incidents": bool(_DASHBOARD_DEFAULTS["debug_incidents"]),
         "incident_definitions": incidentDefinitions(),
     }
     if isinstance(section, dict):
         value = section.get("show_sample_capture")
         if isinstance(value, bool):
             merged["show_sample_capture"] = value
+        debug_value = section.get("debug_incidents")
+        if isinstance(debug_value, bool):
+            merged["debug_incidents"] = debug_value
         handling = _incidentHandlingDefaults()
         handling.update(_sanitizeIncidentHandling(section.get("incident_handling")))
         merged["incident_handling"] = handling
@@ -361,6 +377,8 @@ def setDashboardConfig(updates: dict[str, Any]) -> dict[str, Any]:
     sanitized: dict[str, Any] = {}
     if "show_sample_capture" in updates and isinstance(updates["show_sample_capture"], bool):
         sanitized["show_sample_capture"] = updates["show_sample_capture"]
+    if "debug_incidents" in updates and isinstance(updates["debug_incidents"], bool):
+        sanitized["debug_incidents"] = updates["debug_incidents"]
     if "incident_handling" in updates:
         handling = _sanitizeIncidentHandling(updates["incident_handling"])
         if handling:

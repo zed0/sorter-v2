@@ -5,6 +5,7 @@
 	import ApiKeysSection from '$lib/components/settings/ApiKeysSection.svelte';
 	import SampleCaptureSection from '$lib/components/settings/SampleCaptureSection.svelte';
 	import SampleStorageSection from '$lib/components/settings/SampleStorageSection.svelte';
+	import IncidentDebugSection from '$lib/components/settings/IncidentDebugSection.svelte';
 	import TailscaleSection from '$lib/components/settings/TailscaleSection.svelte';
 	import WifiSection from '$lib/components/settings/WifiSection.svelte';
 </script>
@@ -37,4 +38,12 @@
 
 <Panel title="Local samples" description="The sample sessions stored on this machine." flush>
 	<SampleStorageSection />
+</Panel>
+
+<Panel
+	title="Incident debugging"
+	description="Camera snapshots and channel state attached to incident records for later review."
+	flush
+>
+	<IncidentDebugSection />
 </Panel>

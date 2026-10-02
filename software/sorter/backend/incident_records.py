@@ -52,6 +52,10 @@ def _createTables(conn: sqlite3.Connection) -> None:
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_kind ON incidents(kind)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_incidents_status ON incidents(status)")
+    # Debug-capture columns (opt-in, see toml_config.debugIncidentsEnabled):
+    # a camera+piece-list snapshot taken at open, and a camera-only snapshot
+    # taken at resolve. NULL whenever debug capture was off.
+    db.add_columns(conn, "incidents", {"debug_before_json": "TEXT", "debug_after_json": "TEXT"})
 
 
 def _connection():
@@ -72,7 +76,12 @@ def _trackId(payload: dict[str, Any]) -> Optional[int]:
     return int(value) if isinstance(value, int) else None
 
 
-def openIncident(payload: dict[str, Any], *, run_id: Optional[str] = None) -> int:
+def openIncident(
+    payload: dict[str, Any],
+    *,
+    run_id: Optional[str] = None,
+    debug_before: Optional[dict[str, Any]] = None,
+) -> int:
     now = time.time()
     triggered_at = payload.get("triggered_at")
     triggered_at = float(triggered_at) if isinstance(triggered_at, (int, float)) else now
@@ -81,8 +90,8 @@ def openIncident(payload: dict[str, Any], *, run_id: Optional[str] = None) -> in
             "INSERT INTO incidents "
             "(run_id, machine_id, kind, source, source_kind, severity, scope, channel, role, "
             "channel_label, piece_uuid, track_id, reason, rule, resolution_hint, operator_message, "
-            "status, triggered_at, updated_at, details_json) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)",
+            "status, triggered_at, updated_at, details_json, debug_before_json) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)",
             (
                 run_id,
                 _machineId(),
@@ -103,6 +112,7 @@ def openIncident(payload: dict[str, Any], *, run_id: Optional[str] = None) -> in
                 triggered_at,
                 now,
                 json.dumps(payload, default=str),
+                json.dumps(debug_before) if debug_before is not None else None,
             ),
         )
         conn.commit()
@@ -133,6 +143,7 @@ def resolveIncident(
     *,
     resolved_by: str = "system",
     resolved_at: Optional[float] = None,
+    debug_after: Optional[dict[str, Any]] = None,
 ) -> None:
     resolved_at = float(resolved_at) if isinstance(resolved_at, (int, float)) else time.time()
     with _connection() as conn:
@@ -143,12 +154,48 @@ def resolveIncident(
         if row is None:
             return
         duration_s = max(0.0, resolved_at - float(row["triggered_at"] or resolved_at))
-        conn.execute(
-            "UPDATE incidents SET status = 'resolved', resolved_at = ?, resolved_by = ?, "
-            "duration_s = ?, updated_at = ? WHERE id = ?",
-            (resolved_at, resolved_by, duration_s, resolved_at, int(row_id)),
-        )
+        if debug_after is not None:
+            conn.execute(
+                "UPDATE incidents SET status = 'resolved', resolved_at = ?, resolved_by = ?, "
+                "duration_s = ?, updated_at = ?, debug_after_json = ? WHERE id = ?",
+                (
+                    resolved_at,
+                    resolved_by,
+                    duration_s,
+                    resolved_at,
+                    json.dumps(debug_after),
+                    int(row_id),
+                ),
+            )
+        else:
+            conn.execute(
+                "UPDATE incidents SET status = 'resolved', resolved_at = ?, resolved_by = ?, "
+                "duration_s = ?, updated_at = ? WHERE id = ?",
+                (resolved_at, resolved_by, duration_s, resolved_at, int(row_id)),
+            )
         conn.commit()
+
+
+def getIncident(row_id: int) -> Optional[dict[str, Any]]:
+    with _connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM incidents WHERE id = ?",
+            (int(row_id),),
+        ).fetchone()
+    if row is None:
+        return None
+    item = dict(row)
+    for key in ("debug_before_json", "debug_after_json"):
+        raw = item.pop(key, None)
+        out_key = key[: -len("_json")]
+        if isinstance(raw, str) and raw:
+            try:
+                item[out_key] = json.loads(raw)
+                continue
+            except (TypeError, ValueError):
+                pass
+        item[out_key] = None
+    return item
 
 
 _LIST_COLUMNS = (
