@@ -107,6 +107,22 @@ class ClassificationChannelStateMachine:
         self._last_progress_at = now
         self._two_piece.noteProgress()
 
+    def _reportClassificationWait(self, stalled_ms: float) -> None:
+        runtime_stats = getattr(self.gc, "runtime_stats", None)
+        if runtime_stats is None or not hasattr(runtime_stats, "setClassificationWait"):
+            return
+        runtime_stats.setClassificationWait(
+            reason=self._watchdogStateLabel(),
+            started_at=time.time() - stalled_ms / 1000.0,
+            deadline_ms=_STALL_INCIDENT_MS,
+        )
+
+    def _clearClassificationWaitReport(self) -> None:
+        runtime_stats = getattr(self.gc, "runtime_stats", None)
+        if runtime_stats is None or not hasattr(runtime_stats, "clearClassificationWait"):
+            return
+        runtime_stats.clearClassificationWait()
+
     def _checkStall(self, now: float) -> None:
         # If we raised the incident and it's since been resolved (operator
         # cleared it), re-arm from now so we don't instantly re-fire on the next
@@ -114,6 +130,7 @@ class ClassificationChannelStateMachine:
         if self._stall_incident_raised and not c4_stall_incident_active(self.gc):
             self._stall_incident_raised = False
             self._rearmProgress(now)
+            self._clearClassificationWaitReport()
             return
 
         perception_service = getattr(self.gc, "perception_service", None)
@@ -131,11 +148,18 @@ class ClassificationChannelStateMachine:
             if self._stall_incident_raised:
                 clear_c4_exit_stuck_incident(self.gc)
                 self._stall_incident_raised = False
+            self._clearClassificationWaitReport()
             return
 
         stalled_ms = (now - self._progressAt()) * 1000.0
-        if self._stall_incident_raised or stalled_ms < _STALL_INCIDENT_MS:
+        if self._stall_incident_raised:
             return
+        if stalled_ms < _STALL_INCIDENT_MS:
+            # Still within the grace window: report live so the dashboard can
+            # show a countdown before this turns into an operator incident.
+            self._reportClassificationWait(stalled_ms)
+            return
+        self._clearClassificationWaitReport()
 
         try:
             from toml_config import incidentHandlingOff

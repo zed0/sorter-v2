@@ -95,6 +95,14 @@ class RuntimeStatsCollector:
         self._servo_bus_offline_since_ts: float | None = None
         self._bus_provider: Any | None = None
         self._active_incident: dict[str, Any] | None = None
+        # Live "what is it waiting on right now" status, updated every tick
+        # while the classification channel has a piece on it but hasn't made
+        # progress yet — well before the stall watchdog's own threshold turns
+        # this into an operator-facing incident. Lets the dashboard show a
+        # countdown to that threshold instead of the operator only finding out
+        # once the machine has already stopped. None whenever nothing is
+        # waiting (channel clear, or actively making progress).
+        self._classification_wait: dict[str, Any] | None = None
         # Row id of the durable incident_records row backing the current
         # active incident, if persistence succeeded. None whenever there is
         # no active incident or the DB write failed (never blocks the machine).
@@ -344,6 +352,25 @@ class RuntimeStatsCollector:
     def activeIncident(self) -> dict[str, Any] | None:
         """Return the currently active blocking incident, if any."""
         return dict(self._active_incident) if self._active_incident else None
+
+    def setClassificationWait(self, *, reason: str, started_at: float, deadline_ms: float) -> None:
+        """Report that the classification channel has a piece on it and is
+        waiting on ``reason`` (a watchdog state label), so the dashboard can
+        show a live countdown to the stall-incident deadline. ``started_at``
+        is a wall-clock timestamp (seconds) so the frontend can compute
+        elapsed/remaining time itself without polling every second."""
+        self._classification_wait = {
+            "reason": str(reason),
+            "started_at": float(started_at),
+            "deadline_ms": float(deadline_ms),
+        }
+        self._last_updated_at = time.time()
+
+    def clearClassificationWait(self) -> None:
+        if self._classification_wait is None:
+            return
+        self._classification_wait = None
+        self._last_updated_at = time.time()
 
     def clearActiveIncident(
         self,
@@ -865,6 +892,9 @@ class RuntimeStatsCollector:
             ),
             "blocked_reason_counts": dict(sorted(self._blocked_reason_counts.items())),
             "pieces_cached": len(self._piece_by_uuid),
+            "classification_wait": (
+                dict(self._classification_wait) if self._classification_wait else None
+            ),
             "servo_bus_offline_since_ts": self._servo_bus_offline_since_ts,
             "last_update_age_s": max(0.0, now - self._last_updated_at),
         }

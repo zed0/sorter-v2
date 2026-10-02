@@ -23,6 +23,7 @@
 	import { buildDashboardFeedCrops, type DashboardFeedCrop } from '$lib/dashboard/crops';
 	import House from '@lucide/svelte/icons/house';
 	import Plug from '@lucide/svelte/icons/plug';
+	import Alert from '$lib/components/ui/Alert.svelte';
 
 	const machine = getMachineContext();
 	const manager = getMachinesContext();
@@ -49,6 +50,51 @@
 	const incidentCard = $derived(
 		(runtimeStats.incident_card ?? null) as IncidentCardData | null
 	);
+
+	// Live countdown to the classification channel's stall-incident threshold.
+	// The backend reports (reason, started_at, deadline_ms) whenever a piece is
+	// on the channel and nothing has progressed yet; `nowMs` ticks locally so
+	// the countdown updates every second without waiting on the next WS push.
+	let nowMs = $state(Date.now());
+	$effect(() => {
+		const timer = setInterval(() => {
+			nowMs = Date.now();
+		}, 1000);
+		return () => clearInterval(timer);
+	});
+	const classificationWait = $derived(normalizeClassificationWait(runtimeStats.classification_wait));
+	const classificationWaitElapsedMs = $derived(
+		classificationWait ? Math.max(0, nowMs - classificationWait.started_at * 1000) : 0
+	);
+	const classificationWaitRemainingMs = $derived(
+		classificationWait ? Math.max(0, classificationWait.deadline_ms - classificationWaitElapsedMs) : 0
+	);
+	const showClassificationWait = $derived(
+		classificationWait !== null && classificationWaitElapsedMs >= 10_000
+	);
+
+	function normalizeClassificationWait(
+		value: unknown
+	): { reason: string; started_at: number; deadline_ms: number } | null {
+		if (!value || typeof value !== 'object') return null;
+		const wait = value as Record<string, unknown>;
+		const reason = typeof wait.reason === 'string' ? wait.reason : '';
+		const started_at = typeof wait.started_at === 'number' ? wait.started_at : null;
+		const deadline_ms = typeof wait.deadline_ms === 'number' ? wait.deadline_ms : null;
+		if (!reason || started_at === null || deadline_ms === null) return null;
+		return { reason, started_at, deadline_ms };
+	}
+
+	const CLASSIFICATION_WAIT_LABELS: Record<string, string> = {
+		waiting: 'Classifying / aiming the chute',
+		waiting_for_piece: 'Waiting for the next piece',
+		ejecting: 'Ejecting the head piece',
+		staging: 'Staging the next piece'
+	};
+
+	function classificationWaitLabel(reason: string): string {
+		return CLASSIFICATION_WAIT_LABELS[reason] ?? reason.replaceAll('_', ' ');
+	}
 
 	async function startSystem() {
 		const baseUrl = currentBackendBaseUrl();
@@ -268,6 +314,13 @@
 							</div>
 						{/if}
 					</section>
+				{/if}
+
+				{#if showClassificationWait && classificationWait}
+					<Alert tone="warning" title="Waiting: {classificationWaitLabel(classificationWait.reason)}">
+						No progress on the classification channel yet; it raises an incident in
+						<span class="num font-medium">{Math.ceil(classificationWaitRemainingMs / 1000)}s</span>.
+					</Alert>
 				{/if}
 
 				{#if incidentCard}
