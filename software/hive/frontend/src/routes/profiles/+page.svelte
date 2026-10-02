@@ -38,7 +38,8 @@
 		if (lists[which]) return;
 		loadingTab = which;
 		try {
-			lists[which] = await api.getProfiles({ scope: which });
+			// Public profiles rank by how many people keep them in their library.
+			lists[which] = await api.getProfiles({ scope: which, sort: which === 'discover' ? 'library' : 'updated' });
 		} catch (e: any) {
 			error = e.error || 'Failed to load sorting profiles';
 		} finally {
@@ -217,6 +218,7 @@
 							{#if profile.is_owner && tab !== 'mine'}<Badge>Yours</Badge>{/if}
 							{#if profile.is_owner}<Badge>{sentence(profile.visibility)}</Badge>{/if}
 							<span class="num">{rules === 0 ? 'No rules' : plural(rules, 'rule')}</span>
+							{#if profile.library_count > 0}<span class="num">{plural(profile.library_count, 'save')}</span>{/if}
 						</div>
 					</div>
 

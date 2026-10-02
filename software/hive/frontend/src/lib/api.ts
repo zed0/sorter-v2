@@ -2371,10 +2371,13 @@ export const api = {
 	},
 
 	// Sorting Profiles
-	getProfiles(params: { scope?: 'discover' | 'mine' | 'library' | 'defaults'; q?: string } = {}) {
+	getProfiles(
+		params: { scope?: 'discover' | 'mine' | 'library' | 'defaults'; q?: string; sort?: 'updated' | 'library' } = {}
+	) {
 		const searchParams = new URLSearchParams();
 		if (params.scope) searchParams.set('scope', params.scope);
 		if (params.q) searchParams.set('q', params.q);
+		if (params.sort) searchParams.set('sort', params.sort);
 		const qs = searchParams.toString();
 		return request<SortingProfileSummary[]>('GET', `/api/profiles${qs ? '?' + qs : ''}`);
 	},

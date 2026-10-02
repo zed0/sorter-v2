@@ -179,7 +179,7 @@ them. Put kit rules **above** broader rules, or those take the parts first
 
 | | |
 |---|---|
-| `GET /api/profiles?scope=mine` | the person's profiles (`library`, `defaults`, `discover` for others) |
+| `GET /api/profiles?scope=mine` | the person's profiles (`library`, `defaults`, `discover` for others); `sort=library` puts the most saved first |
 | `GET /api/profiles/{id}` | a profile, its versions, and the current version's rules and bins |
 | `GET /api/profiles/{id}/head` | the latest version number, cheap, to see if it changed |
 | `POST /api/profiles` | a new profile: `name`, `description`, `rules`, `fallback_mode` |

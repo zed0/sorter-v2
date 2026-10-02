@@ -472,10 +472,11 @@ def route_pieces(
 def list_profiles(
     scope: str = Query(default="discover", pattern="^(discover|mine|library|defaults)$"),
     q: str = Query(default=""),
+    sort: str = Query(default="updated", pattern="^(updated|library)$"),
     db: Session = Depends(get_db),
     current_user: User = READ,
 ):
-    profiles = _query_profiles_for_scope(db, current_user, scope, q)
+    profiles = _query_profiles_for_scope(db, current_user, scope, q, sort)
     saved_profile_ids = _saved_profile_ids(db, current_user.id)
     return [_serialize_profile_summary(db, profile, current_user, saved_profile_ids) for profile in profiles]
 
@@ -1483,7 +1484,9 @@ def _artifact_response(version: SortingProfileVersion, format: str, request: Req
 # --- Helpers ----------------------------------------------------------------------------
 
 
-def _query_profiles_for_scope(db: Session, current_user: User, scope: str, query: str) -> list[SortingProfile]:
+def _query_profiles_for_scope(
+    db: Session, current_user: User, scope: str, query: str, sort: str = "updated"
+) -> list[SortingProfile]:
     q = db.query(SortingProfile)
     search = f"%{query.lower()}%" if query else None
     if scope == "mine":
@@ -1513,6 +1516,8 @@ def _query_profiles_for_scope(db: Session, current_user: User, scope: str, query
         )
     if scope == "defaults":
         return q.order_by(SortingProfile.default_rank.asc()).all()
+    if sort == "library":
+        return q.order_by(SortingProfile.library_count.desc(), SortingProfile.updated_at.desc()).all()
     return q.order_by(SortingProfile.updated_at.desc()).all()
 
 
