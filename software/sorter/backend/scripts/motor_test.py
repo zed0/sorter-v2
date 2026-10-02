@@ -164,6 +164,19 @@ def api_stepper_home():
     return jsonify({"ok": triggered, "triggered": triggered})
 
 
+@app.get("/api/chute/limit_switch")
+def api_chute_limit_switch():
+    if _chute_home_pin is None:
+        return jsonify({"available": False})
+    try:
+        with _lock:
+            value = bool(_chute_home_pin.value)
+    except Exception as exc:
+        return jsonify({"available": True, "error": str(exc)}), 500
+    triggered = value == _chute_endstop_active_high
+    return jsonify({"available": True, "value": value, "active_high": _chute_endstop_active_high, "triggered": triggered})
+
+
 @app.post("/api/servo/move")
 def api_servo_move():
     body = request.json
@@ -388,6 +401,12 @@ function mkStepperCard(name, info, keyNum) {
       <button class="btn-muted stop-btn">stop</button>
       ${info.can_home ? '<button class="btn-accent home-btn">home</button>' : ''}
     </div>
+    ${info.can_home ? `
+    <div class="row">
+      <div class="status-dot limit-dot"></div>
+      <span style="font-size:.75rem;color:var(--muted)">limit switch</span>
+      <span class="limit-state" style="margin-left:auto;font-size:.75rem;color:var(--muted)">—</span>
+    </div>` : ''}
     <div class="feedback"></div>
   `;
 
@@ -558,6 +577,23 @@ async function initCameras() {
 }
 
 const _stepperCards = [];
+
+// Polls independently of card creation/teardown so it survives reconnects
+// without tracking per-card intervals: it just looks up the current DOM by
+// class each tick and no-ops if the chute stepper's card isn't rendered.
+async function pollLimitSwitch() {
+  const dot = document.querySelector('.limit-dot');
+  const label = document.querySelector('.limit-state');
+  if (!dot || !label) return;
+  try {
+    const r = await fetch('/api/chute/limit_switch').then(res => res.json());
+    if (!r.available) { label.textContent = 'n/a'; dot.classList.remove('on'); return; }
+    if (r.error) { label.textContent = 'error'; dot.classList.remove('on'); return; }
+    dot.classList.toggle('on', r.triggered);
+    label.textContent = r.triggered ? 'TRIGGERED' : 'open';
+  } catch (e) { /* transient fetch failure — leave last known state on screen */ }
+}
+setInterval(pollLimitSwitch, 300);
 
 async function init() {
   initCameras();
