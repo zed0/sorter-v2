@@ -103,6 +103,7 @@ def _configureStepper(
     label: str,
     stepper_config: "StepperConfig | None",
     machine_config,
+    driver_uart_wired: bool = True,
 ) -> None:
     """Put the stepper's TMC2209 in UART mode and write its microsteps, speed,
     acceleration, current and StallGuard settings. Raises HardwareFault when a
@@ -110,8 +111,11 @@ def _configureStepper(
     power-on settings runs at the wrong current and microstepping, or not at all.
 
     Without motor power (NO_POWER_DEVELOPMENT_MODE) the drivers cannot answer,
-    so the writes go out unchecked."""
-    verify = not gc.no_power_development_mode
+    so the writes go out unchecked. Same when driver_uart_wired is False: some
+    boards (e.g. the protoboard) never wire UART to the driver at all, so a
+    register read can never succeed there, and current is set by the driver
+    module's trimmer pot instead."""
+    verify = not gc.no_power_development_mode and driver_uart_wired
 
     def run(action: str, command):
         return _initCommand(gc, label, action, command)
@@ -174,10 +178,15 @@ def _configureStepper(
                 f"was sent, so it would run at the wrong current or microstepping. "
                 f"Check the driver's connection. {_CHECK_POWER}",
             )
+    if verify:
+        unchecked_reason = f", driver took {writes} writes"
+    elif not driver_uart_wired:
+        unchecked_reason = ", unchecked (driver UART not wired on this board)"
+    else:
+        unchecked_reason = ", unchecked (no motor power)"
     gc.logger.info(
         f"Stepper '{label}' configured: IRUN={irun} IHOLD={ihold} IHOLD_DELAY={ihold_delay}, "
-        f"StallGuard {'on' if stepper.stallguard_enabled else 'off'}"
-        + (f", driver took {writes} writes" if verify else ", unchecked (no motor power)")
+        f"StallGuard {'on' if stepper.stallguard_enabled else 'off'}" + unchecked_reason
     )
 
 
@@ -1111,6 +1120,7 @@ def _bindHardware(irl_interface: IRLInterface, config: IRLConfig, gc: GlobalConf
             _STEPPER_LABELS.get(attr_base, attr_base),
             stepper_config,
             machine_config,
+            board.driver_uart_wired,
         )
         logical_name = logical_name_for_attr_base.get(attr_base)
         stepper.set_direction_inverted(

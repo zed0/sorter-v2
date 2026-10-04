@@ -36,6 +36,12 @@ class BoardProfile:
     # Polarity of the chute home switch as this board is shipped, when it
     # differs from DEFAULT_CHUTE_ENDSTOP_ACTIVE_HIGH. machine.toml still wins.
     chute_home_active_high: bool | None = None
+    # False on boards that never wire UART between the RP2040 and a driver
+    # (e.g. the protoboard — see hwcfg_protoboard.h), so a register read can
+    # never succeed there. Current/microstepping on those boards is set by
+    # the driver module's trimmer pot instead, and init must not expect its
+    # writes to be confirmed.
+    driver_uart_wired: bool = True
 
 
 SKR_PICO_FEEDER_PROFILE = BoardProfile(
@@ -101,6 +107,17 @@ BASICALLY_V1_2_DISTRIBUTION_PROFILE = BoardProfile(
     chute_home_active_high=False,
 )
 
+PROTOBOARD_PROFILE = BoardProfile(
+    family="protoboard",
+    role="distribution",
+    physical_to_canonical_stepper_names={"chute_stepper": "chute_stepper"},
+    input_aliases={"chute_home": 0},
+    # Inherited from the V1.2 profile this board used to be misclassified as;
+    # not independently verified for the protoboard's actual switch wiring.
+    chute_home_active_high=False,
+    driver_uart_wired=False,
+)
+
 GENERIC_PROFILE = BoardProfile(
     family="generic_sorter_interface",
     role="unknown",
@@ -141,6 +158,10 @@ class ControlBoard(ABC):
     @property
     def chute_home_active_high(self) -> bool | None:
         return None
+
+    @property
+    def driver_uart_wired(self) -> bool:
+        return True
 
     @abstractmethod
     def iter_steppers(self) -> tuple[DiscoveredStepper, ...]:
@@ -215,6 +236,10 @@ class SorterInterfaceControlBoard(ControlBoard):
     @property
     def chute_home_active_high(self) -> bool | None:
         return self._profile.chute_home_active_high
+
+    @property
+    def driver_uart_wired(self) -> bool:
+        return self._profile.driver_uart_wired
 
     def iter_steppers(self) -> tuple[DiscoveredStepper, ...]:
         return self._discovered_steppers
@@ -378,6 +403,11 @@ def _detect_board_profile(sorter_interface: SorterInterface) -> BoardProfile:
         return SKR_PICO_FEEDER_PROFILE
     if physical_names == _BASICALLY_FEEDER_NAMES:
         return BASICALLY_FEEDER_PROFILE
+    if physical_names == frozenset({"chute_stepper"}):
+        # The hand-wired protoboard only ever populates the chute channel, so
+        # this is the one signature no other distribution board can match —
+        # unlike it, they'd also report their other stepper channels.
+        return PROTOBOARD_PROFILE
     if "chute_stepper" in physical_names:
         if digital_output_count >= 5:
             return SKR_PICO_DISTRIBUTION_PROFILE

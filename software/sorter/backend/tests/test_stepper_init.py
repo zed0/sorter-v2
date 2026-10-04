@@ -77,14 +77,18 @@ _STEPPER_CONFIG = SimpleNamespace(
 )
 
 
-def _configure(driver: _Driver, *, no_power: bool = False, stallguard: bool = True) -> None:
+def _configure(
+    driver: _Driver, *, no_power: bool = False, stallguard: bool = True, driver_uart_wired: bool = True
+) -> None:
     gc = SimpleNamespace(logger=_Logger(), no_power_development_mode=no_power)
     machine_config = SimpleNamespace(
         stepper_current_overrides={},
         stepper_stallguard={"chute_stepper": (60, 0x3FF, True)} if stallguard else {},
     )
     with patch("irl.config.time.sleep"):
-        _configureStepper(gc, driver, "chute_stepper", "chute", _STEPPER_CONFIG, machine_config)
+        _configureStepper(
+            gc, driver, "chute_stepper", "chute", _STEPPER_CONFIG, machine_config, driver_uart_wired
+        )
 
 
 class StepperInitTests(unittest.TestCase):
@@ -122,6 +126,11 @@ class StepperInitTests(unittest.TestCase):
     def test_no_power_mode_sends_the_settings_unchecked(self) -> None:
         driver = _Driver(answers=False)  # unpowered drivers cannot answer reads
         _configure(driver, no_power=True)
+        self.assertTrue(driver.detection_on)
+
+    def test_boards_without_driver_uart_send_the_settings_unchecked(self) -> None:
+        driver = _Driver(answers=False)  # e.g. the protoboard: UART never wired to the driver
+        _configure(driver, driver_uart_wired=False)
         self.assertTrue(driver.detection_on)
 
 
